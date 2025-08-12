@@ -23,6 +23,7 @@ class DomainClock(DeviceClock.DeviceClock):
         Initialises a new `DomainClock` instance.
 
         :param domain_participant: The `rti.connextdds.DomainParticipant` for the new instance
+        :raises ValueError: If there is no domain_participant provided in the constructor
         """
 
         if not domain_participant:
