@@ -13,6 +13,7 @@ from ice import ice_SampleArray
 from ice_DataWriter import ice_DataWriter
 
 import DeviceClock
+from DomainClock import DomainClock
 
 import units
 from units import rosetta
@@ -37,6 +38,7 @@ from rti.connextdds import Subscriber
 from abc import ABC
 from typing import TypeVar, Final, Generic, Optional
 import logging
+import threading
 
 
 T = TypeVar('T')
@@ -51,6 +53,53 @@ class InstanceHolder(Generic[T]):
 
     def __str__(self) -> str:
         return f"[data={self.data},handle={self.handle}]"
+
+
+class Averager:
+    """
+    A class for keeping a rolling array to derive an average from.
+    It uses an python list to keep the values, rather than a fixed size
+    array, to cater for variable frequency of data.  Calling the get()
+    method empties the array.  Adding via the add() method or calculating
+    the average use python thread locking to ensure thread safety, as the 
+    average will be requested from a different thread to one populating values
+    """
+
+    def __init__(self):
+        """
+        Initialises a new `Averager` instance
+        """
+
+        self.__values = []
+        self.__lock = threading.Lock()
+    
+
+    def add(self, value: float) -> None:
+        """
+        Add a new value to the internal list
+
+        :param value: The value to add to the internal list
+        """
+
+        with self.__lock:
+            self.__values.append(value)
+    
+
+    def get(self) -> float:
+        """
+        Gets the average of the values stored in the internal list
+
+        :returns average: The average of all values in the internal list
+        """
+
+        with self.__lock:
+            # Avoid division by zero
+            if not self.__values:
+                return 0.0
+            
+            avg = sum(self.__values) / len(self.__values)
+            self.__values.clear()
+            return avg
         
 
 class AbstractDevice(ABC):
@@ -81,6 +130,8 @@ class AbstractDevice(ABC):
         self._patientAlertWriter: Final[ice_DataWriter[ice_Alert]] = None
 
         self._technicalAlertWriter: Final[ice_DataWriter[ice_Alert]] = None
+
+        self.__averagesByNumeric: dict[str, ]
 
         self.__registeredSampleArrayInstances: Final[list[InstanceHolder[ice_SampleArray]]] = []
         self.__registeredNumericInstances: Final[list[InstanceHolder[ice_Numeric]]] = []
@@ -374,5 +425,17 @@ class AbstractDevice(ABC):
         holder.data.value = new_value
 
         if time.has_device_time():
-            t: Time = DomainClock.toDDSTime(time.get_device_time())
-            #TODO: Impliment DomainClock then come back
+            t: Time = DomainClock.to_DDS_time(time.get_device_time())
+            holder.data.device_time.sec = t.sec
+            holder.data.device_time.nanosec = t.nanosec
+        else:
+            holder.data.device_time.sec = 0
+            holder.data.device_time.nanosec = 0
+
+        t: Time = DomainClock.to_DDS_time(time.get_time())
+        holder.data.presentation_time.sec = t.sec
+        holder.data.presentation_time.nanosec = t.nanosec
+
+        self._numericDataWriter.write(holder.data, holder.handle)
+
+        # TODO: FINISH NUMERICSAMPLE
