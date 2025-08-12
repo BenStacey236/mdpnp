@@ -8,6 +8,16 @@ from typing import Final
 class Reading(ABC):
     """
     Interface for clock readings
+
+    A `Reading` is a point on the time-line as perceived by the instance of the clock that is returning this reading.
+    
+    In reality, just like different calendars have different conventions of now to name a particular year -
+    Gregorian vs Julian vs etc calendars, a moment in time can be described by the system clock and by the
+    device clock and the two are not guaranteed to be the same.  But unlike the dates that can be converted
+    from one calendar to another, the clocks are not guaranteed to be in sync. Therefore we would
+    want to carry both timestamps around.
+
+    :See also: `CombinedReading`
     """
 
     @abstractmethod

@@ -80,7 +80,7 @@ class ice_DataWriter(Generic[T]):
         self.writer.unregister_instance(handle, params)
 
 
-    def unregister_instance_w_params(self, handle: dds.InstanceHandle, params: dds.WriteParams):
+    def unregister_instance_w_params(self, handle: dds.InstanceHandle, params: dds.WriteParams) -> None:
         """
         Unregisters an instance from DDS with parameters
 
@@ -91,7 +91,7 @@ class ice_DataWriter(Generic[T]):
         self.writer.unregister_instance(handle, params)
 
 
-    def write(self, data: T, handle: dds.InstanceHandle):
+    def write(self, data: T, handle: dds.InstanceHandle) -> None:
         """
         Writes data to DDS by updating the DDS instance registered at the provided `InstanceHandle`
 
@@ -102,7 +102,7 @@ class ice_DataWriter(Generic[T]):
         self.writer.write(data, handle)
 
 
-    def write_w_timestamp(self, data: T, handle: dds.InstanceHandle, timestamp: dds.Time):
+    def write_w_timestamp(self, data: T, handle: dds.InstanceHandle, timestamp: dds.Time) -> None:
         """
         Writes data to DDS with a timestamp by updating the DDS instance registered at the provided `InstanceHandle`
 
@@ -116,7 +116,7 @@ class ice_DataWriter(Generic[T]):
         self.writer.write(data, handle, params)
 
 
-    def write_w_params(self, data: T, params: dds.WriteParams):
+    def write_w_params(self, data: T, params: dds.WriteParams) -> None:
         """
         Writes data to DDS with parameters by updating the DDS instance registered at the provided `InstanceHandle`
 
@@ -137,7 +137,7 @@ class ice_DataWriter(Generic[T]):
         self.writer.dispose_instance(handle)
 
 
-    def dispose_w_timestamp(self, handle: dds.InstanceHandle, timestamp: dds.Time):
+    def dispose_w_timestamp(self, handle: dds.InstanceHandle, timestamp: dds.Time) -> None:
         """
         Disposes of an instance on DDS with a timestamp
 
@@ -148,7 +148,7 @@ class ice_DataWriter(Generic[T]):
         self.writer.dispose_instance(handle, timestamp)
 
 
-    def dispose_w_params(self, params: dds.WriteParams):
+    def dispose_w_params(self, params: dds.WriteParams) -> None:
         """
         Disposes of an instance on DDS with parameters
         

@@ -369,3 +369,10 @@ class AbstractDevice(ABC):
             self._alarmLimitObjectiveDataWriter.unregister_instance(holder.handle)
 
 
+    def _numericSample(self, holder: InstanceHolder[ice_Numeric], new_value: float, time: DeviceClock.Reading) -> None:
+        
+        holder.data.value = new_value
+
+        if time.has_device_time():
+            t: Time = DomainClock.toDDSTime(time.get_device_time())
+            #TODO: Impliment DomainClock then come back
