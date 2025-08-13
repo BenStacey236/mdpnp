@@ -894,6 +894,13 @@ class AbstractDevice(ABC):
 
 
     def __publish(self, holder: InstanceHolder[ice_SampleArray], device_timestamp: DeviceClock.Reading) -> None:
+        """
+        Finally performs publishing of a `SampleArray`. This is only a helper method.
+        USE _sampleArraySample AS A USER
+
+        :param holder: The `InstanceHolder` containng the `SampleArray` to publish
+        :param device_timestamp: The timestamp of the device to publish with the `SampleArray`
+        """
 
         if device_timestamp.has_device_time():
             t: Time = DomainClock.to_DDS_time(device_timestamp.get_device_time())
@@ -938,3 +945,11 @@ class AbstractDevice(ABC):
         return holder
     
 
+    def iconResourceName() -> str:
+        """
+        Gets the icon resource name
+        
+        :returns name: The icon resource name
+        """
+
+        return None
