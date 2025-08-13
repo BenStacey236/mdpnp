@@ -857,8 +857,7 @@ class AbstractDevice(ABC):
             self.__publish(holder, timestamp)
 
         elif metric_id and vendor_metric_id and unit_id and frequency:
-            #holder = self.__ensureHolderConsistency(holder, metric_id, vendor_metric_id, instance_id, unit_id, frequency)
-            #TODO: UNCOMMENT AFTER IMPLIMENTING
+            holder = self.__ensureHolderConsistency(holder, metric_id, vendor_metric_id, instance_id, unit_id, frequency)
 
             if not container.is_null():
                 timestamp = timestamp.refine_resolution_for_frequency(frequency, container.size())
@@ -911,3 +910,31 @@ class AbstractDevice(ABC):
         self._sampleArrayDataWriter.write(holder.data, holder.handle if holder.handle else InstanceHandle.nil())
 
         #TODO ADD SQL HANDLING
+
+
+    def __ensureHolderConsistency(self, holder: InstanceHolder[ice_SampleArray], metric_id: str, vendor_metric_id: str, instance_id: int, unit_id: str, frequency: int) -> Optional[InstanceHolder[ice_SampleArray]]:
+        """
+        Ensures that the attributes in the provided `InstanceHolder`'s `SampleArray` match what they should be.
+        If consistency is wrong, the holder will be unregistered.
+
+        :param holder: The `InstanceHolder` to validate consistency of
+        :param metric_id: The metric_id to validate with
+        :param vendor_metric_id: The vendor_metric_id to validate with
+        :param instance_id: The instance_id to validate with
+        :param unit_id: The unit_id to validate with
+        :param frequency: The frequency to validate with
+        :returns holder: The validated holder instance or None if the holder was invalid
+        """
+
+        if holder and (not holder.data.metric_id == metric_id or
+                       not holder.data.vendor_metric_id == vendor_metric_id or
+                       not holder.data.instance_id == instance_id or
+                       not holder.data.frequency == frequency or
+                       not holder.data.unit_id == unit_id):
+            
+            self._unregisterSampleArrayInstance(holder)
+            holder = None
+
+        return holder
+    
+
