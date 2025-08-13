@@ -131,7 +131,7 @@ class AbstractDevice(ABC):
 
         self._technicalAlertWriter: Final[ice_DataWriter[ice_Alert]] = None
 
-        self.__averagesByNumeric: dict[str, ]
+        self.__averagesByNumeric: dict[str, Averager] = {}
 
         self.__registeredSampleArrayInstances: Final[list[InstanceHolder[ice_SampleArray]]] = []
         self.__registeredNumericInstances: Final[list[InstanceHolder[ice_Numeric]]] = []
@@ -421,9 +421,15 @@ class AbstractDevice(ABC):
 
 
     def _numericSample(self, holder: InstanceHolder[ice_Numeric], new_value: float, time: DeviceClock.Reading) -> None:
+        """
+        Handles publishing and averaging of a new `Numeric`.
+
+        :param holder: The `InstanceHolder` that holds the `Numeric` instance used for publishing to DDS
+        :param new_value: The new value that you want to publish and average out
+        :param time: A `DeviceClock.Reading` instance with the desired timestamp for the `Numeric` reading
+        """
         
         holder.data.value = new_value
-
         if time.has_device_time():
             t: Time = DomainClock.to_DDS_time(time.get_device_time())
             holder.data.device_time.sec = t.sec
@@ -438,4 +444,97 @@ class AbstractDevice(ABC):
 
         self._numericDataWriter.write(holder.data, holder.handle)
 
-        # TODO: FINISH NUMERICSAMPLE
+        if holder.data.metric_id in self.__averagesByNumeric:
+            self.__averagesByNumeric[holder.data.metric_id].add(new_value)
+        else:
+            averager = Averager()
+            averager.add(new_value)
+            self.__averagesByNumeric[holder.data.metric_id] = averager
+
+
+    def _alarmLimitSample(self, holder: Optional[InstanceHolder[ice_AlarmLimit]], unit_id: str, new_value: float, metric_id: str = None, limit_type: ice_LimitType = None) -> Optional[InstanceHolder[ice_AlarmLimit]]:
+        """
+        Handles publishing of a new `AlarmLimit` to DDS.
+        `metric_id` and `limit_type` only need to be populated if you dont have a `holder` to provide. In this
+        case, a new holder will be created using the provided metric_id an limit_type
+
+        :param holder: The `InstanceHolder` that holds the `AlarmLimit` instance used for publishing to DDS. Can only be `None` if metric_id and limit_type are provided
+        :param unit_id: The unit_id of the new `AlarmLimit` to publish
+        :param new_value: The new value to publish to DDS
+        :param metric_id: The metric_id of the new `InstanceHolder` that will be created if one isn't provided
+        :param limit_type: The limit_type of the new `InstanceHolder` that will be created if one isn't provided
+        :returns holder: The `InstanceHolder` that is newly created (if one needs to be create, otherwise None)
+        :raises ValueError: If a holder is not provided when metric_id and limit_type are also not provided
+        """
+
+        if not metric_id or not limit_type:
+            if holder == None:
+                raise ValueError("Must provide a holder if metric_id and limit_type not provided")
+            
+            if new_value != holder.data.value or unit_id != holder.data.unit_identifier:
+                holder.data.value = new_value
+                holder.data.unit_identifier = unit_id
+                self._alarmLimitDataWriter.write(holder.data, holder.handle)
+
+        else:
+            if holder != None and (
+                not holder.data.unique_device_identifier == self._deviceIdentity.unique_device_identifier or
+                not holder.data.metric_id == metric_id or
+                not holder.data.limit_type == limit_type):
+
+                self._unregisterAlarmLimitInstance(holder)
+                holder = None
+
+            if new_value != None:
+                if holder == None:
+                    holder = self._createAlarmLimitInstance(metric_id, limit_type)
+
+                self._alarmLimitSample(holder, unit_id, new_value)
+
+            else:
+                if holder != None:
+                    self._unregisterAlarmLimitInstance(holder)
+                    holder = None
+
+        return holder
+
+
+    def _alarmLimitObjectiveSample(self, holder: Optional[InstanceHolder[ice_LocalAlarmLimitObjective]], unit_id: str, new_value: float, metric_id: str = None, limit_type: ice_LimitType = None) -> Optional[InstanceHolder[ice_LocalAlarmLimitObjective]]:
+        """
+        Handles publishing of a new `LocalAlarmLimitObjective` to DDS
+
+        :param holder: The `InstanceHolder` that holds the `LocalAlarmLimitObjective` instance used for publishing to DDS
+        :param unit_id: The unit_id of the new `LocalAlarmLimitObjective` to publish
+        :param new_value: The new value to publish to DDS
+        """
+
+        if not metric_id or not limit_type:
+            if holder == None:
+                raise ValueError("Must provide a holder if metric_id and limit_type not provided")
+            
+            if new_value != holder.data.value or unit_id != holder.data.unit_identifier:
+                holder.data.value = new_value
+                holder.data.unit_identifier = unit_id
+                self._alarmLimitObjectiveDataWriter.write(holder.data, holder.handle)
+
+        else:
+            if holder != None and (
+                not holder.data.unique_device_identifier == self._deviceIdentity.unique_device_identifier or
+                not holder.data.metric_id == metric_id or
+                not holder.data.limit_type == limit_type):
+
+                self._unregisterAlarmLimitObjectiveInstance(holder)
+                holder = None
+
+            if new_value != None:
+                if holder == None:
+                    holder = self._createAlarmLimitObjectiveInstance(metric_id, limit_type)
+
+                self._alarmLimitObjectiveSample(holder, unit_id, new_value)
+
+            else:
+                if holder != None:
+                    self._unregisterAlarmLimitObjectiveInstance(holder)
+                    holder = None
+
+        return holder
