@@ -36,13 +36,15 @@ from rti.connextdds import Subscriber
 #from rti.connextdds import ViewStateKind
 #from rti.connextdds import Topic
 
-from abc import ABC
-from typing import TypeVar, Final, Generic, Optional
+from abc import ABC, abstractmethod
+from overrides import overrides
+from typing import TypeVar, Final, Generic, Optional, Collection, Iterator
 import logging
 import threading
 
+T = TypeVar('T') # Used for typing generics
 
-T = TypeVar('T')
+
 class InstanceHolder(Generic[T]):
     """
     InstanceHolder class that is Generic on type T, used by AbstractDevice
@@ -101,7 +103,101 @@ class Averager:
             avg = sum(self.__values) / len(self.__values)
             self.__values.clear()
             return avg
-        
+
+
+class NullSaveContainer(ABC, Generic[T]):
+    """
+    Generic wrapper/container interface mainly used for constructing sample arrays
+    """
+
+    @abstractmethod
+    def is_null() -> bool:
+        """
+        Returns whether or not the current container is None
+        """
+        pass
+
+    @abstractmethod
+    def __iter__() -> Iterator[T]:
+        """
+        Returns an iterator over the elements in the container.
+        """
+        pass
+
+
+    @abstractmethod
+    def size() -> int:
+        """
+        Return the number of elements in the container.
+        """
+        pass
+
+
+class CollectionContainer(NullSaveContainer[T], Generic[T]):
+    """
+    A generic container class that wraps objects classed as a `Collection`
+    """
+
+    def __init__(self, data: Collection[T]) -> None:
+        """
+        Initialises a new `CollectionContainer` instance
+
+        :param data: A `Collection` for the container to store
+        """
+
+        self.__dt: Final[Collection[T]] = data
+
+
+    @overrides
+    def is_null(self) -> bool:
+        return self.__dt is None
+    
+
+    @overrides
+    def __iter__(self) -> Iterator[T]:
+        if self.__dt is None:
+            return iter()
+        return iter(self.__dt)
+    
+
+    @overrides
+    def size(self) -> int:
+        return 0 if self.__dt is None else len(self.__dt)
+
+
+class ArrayContainer(NullSaveContainer[T], Generic[T]):
+    """
+    A container class that wraps arrays containing generic type T
+    """
+
+    def __init__(self, data: list[T], length: int = None) -> None:
+        """
+        Initialises a new `ArrayContainer` instance
+
+        :param data: An array containing the data of datatype T
+        :param length: Optionally, the length of the array.
+        """
+
+        self.__dt: Final[list[T]] = data
+        self.__l: Final[int] = 0 if data is None else len(data)
+
+
+    @overrides
+    def is_null(self) -> bool:
+        return self.__dt is None
+    
+
+    overrides
+    def __iter__(self) -> Iterator[T]:
+        if self.__dt is None:
+            return iter()
+        return iter(self.__dt[:self.__l])
+    
+
+    @overrides
+    def size(self) -> int:
+        return self.__l
+
 
 class AbstractDevice(ABC):
     """
@@ -424,7 +520,7 @@ class AbstractDevice(ABC):
             self._alarmLimitObjectiveDataWriter.unregister_instance(holder.handle)
 
 
-    def _numericSample(self, holder: Optional[InstanceHolder[ice_Numeric]], new_value: float | int, time: DeviceClock.Reading, metric_id: str = None, vendor_metric_id: str = None, unit_id: str = units.rosetta_MDC_DIM_DIMLESS, instance_id: int = 0):
+    def _numericSample(self, holder: Optional[InstanceHolder[ice_Numeric]], new_value: float | int, time: DeviceClock.Reading, metric_id: str = None, vendor_metric_id: str = None, unit_id: str = units.rosetta_MDC_DIM_DIMLESS, instance_id: int = 0) -> Optional[InstanceHolder[ice_Numeric]]:
         """
         Handles publishing and averaging of a `Numeric` to DDS.
         
@@ -652,4 +748,166 @@ class AbstractDevice(ABC):
                 writer.write(alert.data, alert.handle)
 
 
+    def _markOldPatientAlertInstances(self) -> None:
+        """
+        Marks all of the currently active patient `Alert` instances as old
+        """
 
+        self.__oldPatientAlertInstances.clear()
+        self.__oldPatientAlertInstances.update(self.__patientAlertInstances.keys())
+
+    
+    def _markOldTechnicalAlertInstances(self) -> None:
+        """
+        Marks all of the currently active technical `Alert` instances as old
+        """
+
+        self.__oldTechnicalAlertInstances.clear()
+        self.__oldTechnicalAlertInstances.update(self.__technicalAlertInstances.keys())
+
+
+    def _clearOldPatientAlertInstances(self) -> None:
+        """
+        Clears all old patient `Alert` instances and unregisters them from DDS
+        """
+
+        for key in self.__oldPatientAlertInstances:
+            self._writePatientAlert(key, None)
+
+
+    def _clearOldTechnicalAlertInstances(self) -> None:
+        """
+        Clearls all old technical `Alert` instances and unregisters them from DDS
+        """
+
+        for key in self.__oldTechnicalAlertInstances:
+            self._writeTechnicalAlert(key, None)
+
+
+    def _writePatientAlert(self, key: str, value: str) -> None:
+        """
+        Publishes a patient `Alert` to DDS.
+
+        :param key: The key of the patient `Alert` to publish
+        :param value: The value of the patient `Alert` to publish
+        """
+
+        self.__writeAlert(self.__oldPatientAlertInstances, self.__patientAlertInstances, self._patientAlertWriter, key, value)
+
+
+    def _writeTechnicalAlert(self, key: str, value: str) -> None:
+        """
+        Publishes a technical `Alert` to DDS.
+
+        :param key: The key of the technical `Alert` to publish
+        :param value: The value of the technical `Alert` to publish
+        """
+
+        self.__writeAlert(self.__oldTechnicalAlertInstances, self.__technicalAlertInstances, self._technicalAlertWriter, key, value)
+
+
+    def _sampleArraySample(
+        self,
+        holder: InstanceHolder[ice_SampleArray],
+        new_values: list[float | int] | Collection[float | int] | NullSaveContainer[float | int],
+        timestamp: DeviceClock.Reading,
+        metric_id: Optional[str] = None,
+        vendor_metric_id: Optional[str] = None,
+        instance_id: int = 0,
+        unit_id: Optional[str] = None,
+        frequency: Optional[int] = None,
+        length: Optional[int] = None
+    ) -> Optional[InstanceHolder[ice_SampleArray]]:
+        """
+        Publishes a new `SampleArray` sample to DDS.
+
+        If only holder, new_values, and timestamp are provided, then a sample will be published using the provided `InstanceHolder`.
+        If you don't have an `InstanceHolder` to provide, or need to update the parameters within the provided one, then all of:
+        metric_id, vendor_metric_id, unit_id, and frequency must be provided so that a new instance can be registered. 
+        In this case, the new `InstanceHolder` will be returned. Otherwise nothing is returned.
+
+        :param holder: The `InstanceHolder` of a `SampleArray` that will be used for publishing
+        :param new_values: The new values to publish in the `SampleArray`. Must be an array(list), any Python object that is a `Collection`, or already in a `NullSaveContainer` child.
+        :param timestamp: The timestamp to be published with the `SampleArray`.
+        :param metric_id: If the metric_id needs to be updated or no holder is being provided, this is the metric_id of the `SampleArray` being published.
+        :param vendor_metric_id: If the vendor_metric_id needs to be updated or no holder is being provided, this is the vendor_metric_id of the `SampleArray` being published.
+        :param instance_id: If the instance_id needs to be updated or no holder is being provided, this is the instance_id of the `SampleArray` being published.
+        :param unit_id: If the unit_id needs to be updated or no holder is being provided, this is the unit_id of the `SampleArray` being published.
+        :param frequency: If the frequency needs to be updated or no holder is being provided, this is the frequency of the `SampleArray` being published.
+        :param length: Very optionally, the length of the array if you provide an array of new_values
+        :returns holder: A new `InstanceHolder` instance if a new one was registered with DDS, otherwise None
+        :raises TypeError: If new_values is not an array(list), Collection, or instance of a child of NullSaveContainer
+        :raises ValueError: If some but not all of metric_id, vendor_metric_id, unit_id, and frequency are provided, but not all. Either provide none to use the existing `InstanceHandle`, or all for a new one
+        """
+
+        # Put all new_values into corresponding containers
+        if not isinstance(new_values, NullSaveContainer):
+            if isinstance(new_values, list):
+                container = ArrayContainer(new_values, length)
+            elif isinstance(new_values, Collection):
+                container = CollectionContainer(new_values)
+            else:
+                raise TypeError(f"new_values must be either list, Collection, or child of NullSaveContainer, not: {type(new_values)}")
+        else:
+            container = new_values
+
+
+        if not metric_id or not vendor_metric_id or not unit_id or not frequency:
+            self.__fill(holder, new_values)
+            self.__publish(holder, timestamp)
+
+        elif metric_id and vendor_metric_id and unit_id and frequency:
+            #holder = self.__ensureHolderConsistency(holder, metric_id, vendor_metric_id, instance_id, unit_id, frequency)
+            #TODO: UNCOMMENT AFTER IMPLIMENTING
+
+            if not container.is_null():
+                timestamp = timestamp.refine_resolution_for_frequency(frequency, container.size())
+                if holder is None:
+                    holder = self._createSampleArrayInstance(metric_id, vendor_metric_id, instance_id, unit_id, frequency)
+
+                self._sampleArraySample(holder, new_values, timestamp)
+
+            else:
+                if holder is not None:
+                    self._unregisterSampleArrayInstance(holder)
+                    holder = None
+
+            return holder
+
+        else:
+            raise ValueError("If you want to register a new instance, you must provide all of: metric_id, vendor_metric_id, unit_id and frequency")
+
+
+    def __fill(self, holder: InstanceHolder[ice_SampleArray], new_values: NullSaveContainer[int | float]) -> None:
+        """
+        Fills up a `SampleArray` in the provided `InstanceHolder` with the new values.
+        Warning: This overrides the current values stored in the `InstanceHolder`'s `SampleArray`
+
+        :param holder: The `InstanceHolder` containing the `SampleArray` to fill up
+        :param new_values: The new values to fill the array up with
+        """
+
+        holder.data.values.value.clear()
+
+        if not new_values.is_null():
+            for n in new_values:
+                holder.data.values.value.append(float(n))
+
+
+    def __publish(self, holder: InstanceHolder[ice_SampleArray], device_timestamp: DeviceClock.Reading) -> None:
+
+        if device_timestamp.has_device_time():
+            t: Time = DomainClock.to_DDS_time(device_timestamp.get_device_time())
+            holder.data.device_time.sec = int(t.sec)
+            holder.data.device_time.nanosec = int(t.sec)
+        
+        else:
+            holder.data.device_time.sec = 0
+            holder.data.device_time.nanosec = 0
+
+        adjusted = device_timestamp.refine_resolution_for_frequency(holder.data.frequency, len(holder.data.values.value))
+        DomainClock.to_DDS_time(adjusted.get_time(), holder.data.presentation_time)
+
+        self._sampleArrayDataWriter.write(holder.data, holder.handle if holder.handle else InstanceHandle.nil())
+
+        #TODO ADD SQL HANDLING
