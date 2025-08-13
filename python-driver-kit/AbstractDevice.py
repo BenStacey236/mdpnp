@@ -1,4 +1,5 @@
 from ice import ice_Alert
+from ice import ice_DeviceAlertCondition
 from ice import ice_DeviceIdentity
 #from ice import ice_DeviceIdentityDataWrite
 #from ice import ice_DeviceIdentityTypeSupport
@@ -104,7 +105,7 @@ class Averager:
 
 class AbstractDevice(ABC):
     """
-    Python equivalent to the AbstractDevice java class. All other OpenICE devices 
+    Python equivalent to the AbstractDevice Java class. All other OpenICE devices 
     inherit from this class.
     """
 
@@ -127,9 +128,13 @@ class AbstractDevice(ABC):
 
         self._alarmLimitObjectiveDataWriter: Final[ice_DataWriter[ice_LocalAlarmLimitObjective]] = None
 
-        self._patientAlertWriter: Final[ice_DataWriter[ice_Alert]] = None
+        self._deviceAlertConditionDataWriter: ice_DataWriter[ice_DeviceAlertCondition] = None
 
-        self._technicalAlertWriter: Final[ice_DataWriter[ice_Alert]] = None
+        self._patientAlertWriter: ice_DataWriter[ice_Alert] = None
+
+        self._technicalAlertWriter: ice_DataWriter[ice_Alert] = None
+
+        self._deviceAlertConditionInstance: InstanceHolder[ice_DeviceAlertCondition] = None
 
         self.__averagesByNumeric: dict[str, Averager] = {}
 
@@ -316,8 +321,7 @@ class AbstractDevice(ABC):
         """
 
         for key in map.keys():
-            #self.__writeAlert(old, map, writer, key, None)
-            pass
+            self.__writeAlert(old, map, writer, key, None)
 
 
     def _unregisterAllPatientAlertInstances(self) -> None:
@@ -595,3 +599,57 @@ class AbstractDevice(ABC):
                     holder = None
 
         return holder
+
+
+    def _writeDeviceAlert(self, alert_state: str) -> None:
+        """
+        Publishes a `DeviceAlert` to DDS.
+
+        :param alert_state: The alert_state to publish to DDS
+        :raises RuntimeError: If there is no deviceAlertCondition registered for the device.
+        """
+
+        alert_state == "" if not alert_state else alert_state
+        if self._deviceAlertConditionInstance:
+            if not alert_state == self._deviceAlertConditionInstance.data.alert_state:
+                self._deviceAlertConditionInstance.data.alert_state = alert_state
+                self._deviceAlertConditionDataWriter.write(self._deviceAlertConditionInstance.data, self._deviceAlertConditionInstance.handle)
+            
+        else:
+            raise RuntimeError("No _deviceAlertCondition; have you called _writeDeviceIdentity?")
+        
+
+    def __writeAlert(self, old: set[str], map: dict[str, InstanceHolder[ice_Alert]], writer: ice_DataWriter[ice_Alert], key: str, value: str) -> None:
+        """
+        Publishes an alert to DDS. If no value is provided, then the `InstanceHolder` at 'key' in the map will be unregistered.
+
+        :param old: A set of old keys
+        :param map: A dictionary mapping string keys to `InstanceHolder` instances holding `Alert` instances
+        :param writer: An `ice_DataWriter` instance for `Alert`s that will be used to write the alert
+        :param key: The key in the `map` parameter that maps to the `InstanceHolder` of the `Alert` you wish to publish
+        :param value: The value stored in the alert
+        """
+        
+        alert: InstanceHolder[ice_Alert] = map.get(key)
+
+        if value == None:
+            if alert:
+                writer.unregister_instance(alert.data, alert.handle)
+                map.pop(key, None)
+        
+        else:
+            if not alert:
+                alert = InstanceHolder()
+                alert.data = ice_Alert()
+                alert.data.unique_device_identifier = self._deviceIdentity.unique_device_identifier
+                alert.data.identifier = key
+                alert.handle = writer.register_instance(alert.data)
+                map[key] = alert
+
+            old.remove(key)
+            if value != alert.data.text:
+                alert.data.text = value
+                writer.write(alert.data, alert.handle)
+
+
+
