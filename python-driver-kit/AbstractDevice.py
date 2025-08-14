@@ -268,6 +268,35 @@ class AbstractDevice(ABC):
         return self._domainParticipant
     
 
+    def getManufacturer(self) -> str:
+        """
+        Gets the device's manufacturer
+        
+        :returns manufacturer: The device's manufacturer
+        """
+
+        return None if not self._deviceIdentity else self._deviceIdentity.manufacturer
+    
+
+    def getModel(self) -> str:
+        """
+        Gets the device's model
+        
+        :returns model: The device's model
+        """
+
+        return None if not self._deviceIdentity else self._deviceIdentity.model
+    
+
+    def getUniqueDeviceIdentifier(self) -> str:
+        """
+        Gets the device's Unique Device Identity
+        
+        :returns udi: The device's Unique Device Identity"""
+
+        return None if not self._deviceIdentity else self._deviceIdentity.unique_device_identifier
+
+
     def _createNumericInstance(self, metric_id: str, vendor_metric_id: str, instance_id: int = 0, unit_id: str = units.rosetta_MDC_DIM_DIMLESS) -> InstanceHolder[ice_Numeric]:
         """
         Creates an initial `Numeric` instance and registers it on DDS
