@@ -982,3 +982,4 @@ class AbstractDevice(ABC):
         """
 
         return None
+
