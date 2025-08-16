@@ -1,20 +1,28 @@
 from ice import ice_Alert
+from ice import ice_PatientAlertTopic
+from ice import ice_TechnicalAlertTopic
 from ice import ice_DeviceAlertCondition
+from ice import ice_DeviceAlertConditionTopic
 from ice import ice_DeviceIdentity
-#from ice import ice_DeviceIdentityDataWrite
-#from ice import ice_DeviceIdentityTypeSupport
+from ice import ice_DeviceIdentityTopic
 from ice import ice_AlarmLimit
+from ice import ice_AlarmLimitTopic
 from ice import ice_LimitType
 from ice import ice_LocalAlarmLimitObjective
+from ice import ice_LocalAlarmLimitObjectiveTopic
+from ice import ice_GlobalAlarmLimitObjective
+from ice import ice_GlobalAlarmLimitObjectiveTopic
 from ice import ice_Numeric
-#from ice import ice_NumericTypeSupport
+from ice import ice_NumericTopic
 from ice import ice_SampleArray
-#from ice import ice_SampleArrayDataWriter
-#from ice import ice_SampleArrayTypeSupport
-from ice_DataWriter import ice_DataWriter
+from ice import ice_SampleArrayTopic
 
+from ice_DataWriter import ice_DataWriter
+from ice_DataReader import ice_DataReader
+from EventLoop import EventLoop
 import DeviceClock
 from DomainClock import DomainClock
+from DeviceIdentityBuilder import DeviceIdentityBuilder
 
 import units
 from units import rosetta
@@ -26,7 +34,7 @@ from rti.connextdds import InstanceHandle
 #from rti.connextdds import infrastructure.ResourceLimitsQosPolicy
 #from rti.connextdds import infrastructure.StatusKind
 from rti.connextdds import Time
-#from rti.connextdds import publication.Publisher
+from rti.connextdds import Publisher
 #from rti.connextdds import subscription.InstanceStateKind
 #from rti.connextdds import subscription.ReadCondition
 #from rti.connextdds import subscription.SampleInfo
@@ -34,7 +42,7 @@ from rti.connextdds import Time
 #from rti.connextdds import subscription.SampleStateKind
 from rti.connextdds import Subscriber
 #from rti.connextdds import ViewStateKind
-#from rti.connextdds import Topic
+from rti.connextdds import Topic
 
 from abc import ABC, abstractmethod
 from overrides import overrides
@@ -199,38 +207,106 @@ class ArrayContainer(NullSaveContainer[T], Generic[T]):
         return self.__l
 
 
+class MetricAndType:
+    """
+    An object that stores a metric_id and limit_type together
+    """
+
+    def __init__(self, metric_id: str, limit_type: ice_LimitType):
+        """
+        Initialises a new `MetricAndType` instance
+        
+        :param metric_id: The metric_id for the new instance to store
+        :param limit_type: The `LimitType` instance for the new instance to store
+        """
+        
+        self.__metric_id: Final[str] = metric_id
+        self.__limit_type: Final[ice_LimitType] = limit_type
+
+    
+    def get_limit_type(self) -> ice_LimitType:
+        """
+        Gets the internal limit_type of the instance
+
+        :returns: The internal `LimitType` instance 
+        """
+
+        return self.__limit_type
+    
+
+    def get_metric_id(self) -> str:
+        """
+        Gets the internal metric_id of the instance as a string
+
+        :returns metric_id: The internal metric_id
+        """
+
+        return self.__metric_id
+
+
 class AbstractDevice(ABC):
     """
     Python equivalent to the AbstractDevice Java class. All other OpenICE devices 
     inherit from this class.
     """
 
-    # Static variables
+    # Static variable
     __log: Final[logging.Logger] = logging.getLogger("AbstractDevice")
 
 
-    def __init__(self) -> None:
-        # TODO: UPDATE THE CONSTRUCTOR TO MATCH ACTUAL AbstractDevice CONSTRUCTOR
+    def __init__(self, subscriber: Subscriber, publisher: Publisher, event_loop: EventLoop) -> None:
+        """
+        Initialises a new device and all of the data writers and data readers required.
 
-        self._domainParticipant: Final[DomainParticipant] = None
-        self._subscriber: Final[Subscriber] = None
-        self._deviceIdentity: Final[ice_DeviceIdentity] = None
+        :param subscriber: The `rti.connextdds.Subscriber` instance used to initialise data readers
+        :param publisher: The `rti.connextdd.Publisher` instance used to initialise data writers
+        :param event_loop: An `EventLoop` instance which is used control events performed by the driver
+        :raises RuntimeError: If any of the data readers or data writers fail to be created.
+        """
 
-        self._numericDataWriter: Final[ice_DataWriter[ice_Numeric]] = None
+        # TODO: DO WE NEED QOS INCLUDED?
 
-        self._sampleArrayDataWriter: Final[ice_DataWriter[ice_SampleArray]] = None
+        self._deviceIdentity: Final[ice_DeviceIdentity] = DeviceIdentityBuilder().os_name().software_rev().with_icon(self._getIconPath()).build()
 
-        self._alarmLimitDataWriter: Final[ice_DataWriter[ice_AlarmLimit]] = None
+        self._domainParticipant: Final[DomainParticipant] = subscriber.participant
+        self._subscriber: Final[Subscriber] = subscriber
+        self._publisher: Final[Publisher] = publisher
 
-        self._alarmLimitObjectiveDataWriter: Final[ice_DataWriter[ice_LocalAlarmLimitObjective]] = None
+        self.__timestampFactory: Final[DeviceClock] = DomainClock(self._domainParticipant)
 
-        self._deviceAlertConditionDataWriter: ice_DataWriter[ice_DeviceAlertCondition] = None
+        self._deviceIdentityWriter: Final[ice_DataWriter[ice_DeviceIdentity]] = ice_DataWriter(self._domainParticipant, ice_DeviceIdentityTopic, ice_DeviceIdentity)
+        if not self._deviceIdentityWriter:
+            raise RuntimeError("_deviceIdentityWriter not created")
 
-        self._patientAlertWriter: ice_DataWriter[ice_Alert] = None
+        self._numericDataWriter: Final[ice_DataWriter[ice_Numeric]] = ice_DataWriter(self._domainParticipant, ice_NumericTopic, ice_Numeric)
+        if not self._numericDataWriter:
+            raise RuntimeError("_numericDataWriter not created")
 
-        self._technicalAlertWriter: ice_DataWriter[ice_Alert] = None
+        self._sampleArrayDataWriter: Final[ice_DataWriter[ice_SampleArray]] = ice_DataWriter(self._domainParticipant, ice_SampleArrayTopic, ice_SampleArray)
+        if not self._sampleArrayDataWriter:
+            raise RuntimeError("_sampleArrayDataWriter not created")
 
-        self._deviceAlertConditionInstance: InstanceHolder[ice_DeviceAlertCondition] = None
+        self._alarmLimitDataWriter: Final[ice_DataWriter[ice_AlarmLimit]] = ice_DataWriter(self._domainParticipant, ice_AlarmLimitTopic, ice_AlarmLimit)
+        if not self._alarmLimitDataWriter:
+            raise RuntimeError("_alarmLimitDataWriter not created")
+
+        self._alarmLimitObjectiveDataWriter: Final[ice_DataWriter[ice_LocalAlarmLimitObjective]] = ice_DataWriter(self._domainParticipant, ice_LocalAlarmLimitObjectiveTopic, ice_LocalAlarmLimitObjective)
+        if not self._alarmLimitObjectiveDataWriter:
+            raise RuntimeError("_alarmLimitObjectiveDataWriter not created")
+        
+        self._alarmLimitObjectiveReader: ice_DataReader[ice_GlobalAlarmLimitObjective] = ice_DataReader(self._domainParticipant, ice_GlobalAlarmLimitObjectiveTopic, ice_GlobalAlarmLimitObjective)
+        if not self._alarmLimitObjectiveReader:
+            raise RuntimeError("_alarmLimitObjectiveReader not created")
+
+        self._deviceAlertConditionDataWriter: ice_DataWriter[ice_DeviceAlertCondition] = ice_DataWriter(self._domainParticipant, ice_DeviceAlertConditionTopic, ice_DeviceAlertCondition)
+        if not self._deviceAlertConditionDataWriter:
+            raise RuntimeError("_deviceAlertConditionDataWriter not created")
+
+        self._patientAlertWriter: ice_DataWriter[ice_Alert] = ice_DataWriter(self._domainParticipant, ice_PatientAlertTopic, ice_Alert)
+        if not self._patientAlertWriter:
+            raise RuntimeError("_patientAlertWriter not created")
+
+        self._technicalAlertWriter: ice_DataWriter[ice_Alert] = ice_DataWriter(self._domainParticipant, ice_TechnicalAlertTopic, ice_Alert)
 
         self.__averagesByNumeric: dict[str, Averager] = {}
 
@@ -242,6 +318,12 @@ class AbstractDevice(ABC):
         self.__technicalAlertInstances: Final[dict[str, InstanceHolder[ice_Alert]]] = {}
         self.__oldPatientAlertInstances: Final[set[str]] = set()
         self.__oldTechnicalAlertInstances: Final[set[str]] = set()
+
+        self.eventLoop: EventLoop = event_loop
+
+        #TODO: IMPLIMENT SQL LOGGING - NOT DONE YET
+
+        #TODO: ADD averagingThread initialisation here
 
 
     def getSubscriber(self) -> Subscriber:
@@ -974,12 +1056,69 @@ class AbstractDevice(ABC):
         return holder
     
 
-    def iconResourceName() -> str:
+    def _getIconPath(self) -> str:
         """
-        Gets the icon resource name
+        Gets the device's icon path
         
-        :returns name: The icon resource name
+        :returns path: The path to the device's icon
         """
 
         return None
+
+
+    def _getClockProvider(self) -> DeviceClock:
+        """
+        Gets an instance of the `DeviceClock` that should be used in stamping messages. Fall-back implementation 
+        will supply dds time. If device maintains its own notion of the clock, it could use `DeviceClock.ComboClock`
+        wrapper to provide clock reading that would contain multiple values.
+
+        :return clock: The `DeviceClock` instance
+        """
+
+        return self.__timestampFactory
+
+
+    def _writeDeviceIdentity(self) -> None:
+
+        self._deviceAlertConditionInstance: InstanceHolder[ice_DeviceAlertCondition] = None
+
+
+    # Abstract methods
+
+    @abstractmethod
+    def init(self) -> None:
+        """
+        Post-construction initialization method to allow implementations to
+        initialize/start whatever sub-components they manage. Ideally, for
+        more sophisticated devices everything complex should be moved out and
+        assembled via 'spring' ioc composition, but there are plenty of cases
+        in the middle where this is appropriate. This would be spring's
+        InitializingBean::afterPropertiesSet lifecycle pointcut.
+        """
+
+        pass
+
+    
+    @abstractmethod
+    def setAlarmLimit(self, objective: ice_GlobalAlarmLimitObjective) -> None:
+        """
+        Sets the alarm limit to the supplied `GlobalAlarmLimitObjective` instance
+
+        :param objective: The `GlobalAlarmLimitObjective` instance to set as the alarm limit
+        """
+
+        pass
+    
+
+    @abstractmethod
+    def unsetAlarmLimit(self, metric_id: str, limit_type: ice_LimitType) -> None:
+        """
+        Unsets the alarm limit for a certain metric and limit type
+
+        :param metric_id: The metric_id of the alarm limit to unset
+        :param limit_type: The `LimitType` of the alarm limit to unset
+        """
+
+        pass
+
 
