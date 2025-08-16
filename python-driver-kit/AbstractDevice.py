@@ -19,7 +19,7 @@ from ice import ice_SampleArrayTopic
 
 from ice_DataWriter import ice_DataWriter
 from ice_DataReader import ice_DataReader
-from EventLoop import EventLoop
+from EventLoop import EventLoop, ConditionHandler
 import DeviceClock
 from DomainClock import DomainClock
 from DeviceIdentityBuilder import DeviceIdentityBuilder
@@ -28,20 +28,16 @@ import units
 from units import rosetta
 
 from rti.connextdds import DomainParticipant
-#from rti.connextdds import infrastructure.Condition
+from rti.connextdds import Condition
 from rti.connextdds import InstanceHandle
-#from rti.connextdds import infrastructure.RETCODE_NO_DATA
-#from rti.connextdds import infrastructure.ResourceLimitsQosPolicy
-#from rti.connextdds import infrastructure.StatusKind
 from rti.connextdds import Time
 from rti.connextdds import Publisher
-#from rti.connextdds import subscription.InstanceStateKind
-#from rti.connextdds import subscription.ReadCondition
-#from rti.connextdds import subscription.SampleInfo
-#from rti.connextdds import subscription.SampleInfoSeq
-#from rti.connextdds import subscription.SampleStateKind
+from rti.connextdds import InstanceState
+from rti.connextdds import ReadCondition
+from rti.connextdds import SampleState
 from rti.connextdds import Subscriber
-#from rti.connextdds import ViewStateKind
+from rti.connextdds import ViewState
+from rti.connextdds import DataState
 from rti.connextdds import Topic
 
 from abc import ABC, abstractmethod
@@ -49,8 +45,10 @@ from overrides import overrides
 from typing import TypeVar, Final, Generic, Optional, Collection, Iterator
 import logging
 import threading
+import time
 
 T = TypeVar('T') # Used for typing generics
+DEFAULT_AVERAGING_TIME = 60 * 1000
 
 
 class InstanceHolder(Generic[T]):
@@ -111,6 +109,61 @@ class Averager:
             avg = sum(self.__values) / len(self.__values)
             self.__values.clear()
             return avg
+
+
+class AveragingThread(threading.Thread):
+    """
+    The thread that controls averaging of numerics
+    """
+
+    def __init__(self, interval: int, averages_by_numeric: dict[str, Averager], device_identity: ice_DeviceIdentity, logger: logging.Logger):
+        """
+        Initialises a new `AveragingThread`
+
+        :param interval: The time interval (in milliseconds) to sleep for in the main run loop.
+        :param averages_by_numeric: The averages_by_numeric instance for `AveragingThread` to calculate averages of
+        :param device_identity: The current device's `DeviceIdentity`
+        :param logger: The logger for the `AveragingThread` to write log infromation to.
+        """
+
+        super().__init__()
+        self.__interval: int = interval
+        self.__averages_by_numeric: dict[str, Averager] = averages_by_numeric
+        self.__device_identity: ice_DeviceIdentity = device_identity
+        self.__log: logging.Logger = logger
+        self.__stop_event = threading.Event().set()
+
+
+    @overrides
+    def run(self):
+        """
+        Starts up the `AveragingThread`
+        """
+
+        while not self.__stop_event.is_set():
+            try:
+                time.sleep(self.__interval / 1000.0)
+
+                for key, avg in self.__averages_by_numeric.items():
+                    val = avg.get()
+                    second = int(time.time())
+
+                    #TODO: SQL HANDLING
+
+            except Exception as e:
+                if isinstance(e, KeyboardInterrupt):
+                    self.__log.info("Averaging Thread was interrupted")
+                    return
+                else:
+                    self.__log.error("Could not add average value for numerics", exc_info=True)
+
+
+    def stop(self):
+        """
+        Signal the thread to stop
+        """
+
+        self.__stop_event.clear()
 
 
 class NullSaveContainer(ABC, Generic[T]):
@@ -244,6 +297,56 @@ class MetricAndType:
         return self.__metric_id
 
 
+class AlarmLimitHandler(ConditionHandler):
+    """
+    Specific subclass of `ConditionHandler` used to add to the eventLoop in writeDeviceIdentity()
+    """
+
+    def __init__(self, device: 'AbstractDevice') -> None:
+        """
+        Initialises a new `AlarmLimitHandler` instance
+
+        :param device: An `AbstractDevice` instance. Gives access to internal variables
+        """
+
+        self.__device = device
+
+
+    @overrides
+    def conditionChanged(self, condition: Condition):
+        """
+        Changes the condition of the eventLoop
+        """
+
+        samples = self.__device._alarmLimitObjectiveReader.read()
+
+        for sample in samples:
+            si = sample.info()
+            obj = sample.data()
+
+            if not si.valid:
+                continue
+            
+            if si.view_state == ViewState.NEW_VIEW:
+                self.__device.__log.debug(f"Handle for metric_id={obj.metric_id} is {si.instance_handle}")
+                self.__device.__instanceToAlarmLimit[InstanceHandle(si.instance_handle)] = MetricAndType(obj.metric_id, obj.limit_type)
+
+            if si.instance_state == InstanceState.ALIVE:
+                self.__device.__log.warning(f"Limit {obj.metric_id} {obj.limit_type} changed to [ {obj.value} {obj.unit_identifier} ]")
+                #TODO: ADD SQLLogging
+                self.__device.setAlarmLimit(obj)
+
+            else:
+                obj = ice_GlobalAlarmLimitObjective()
+                self.__device.__log.warning(f"Unsetting handle {si.instance_handle}")
+                mt: MetricAndType = self.__device.__instanceToAlarmLimit.get(si.instance_handle)
+
+                if mt:
+                    self.__device.__log.debug(f"Unsetting alarm limit {mt.get_metric_id()} {mt.get_limit_type()}")
+                    self.__device.unsetAlarmLimit(mt.get_metric_id, mt.get_limit_type())
+
+
+
 class AbstractDevice(ABC):
     """
     Python equivalent to the AbstractDevice Java class. All other OpenICE devices 
@@ -267,6 +370,8 @@ class AbstractDevice(ABC):
         # TODO: DO WE NEED QOS INCLUDED?
 
         self._deviceIdentity: Final[ice_DeviceIdentity] = DeviceIdentityBuilder().os_name().software_rev().with_icon(self._getIconPath()).build()
+        self._deviceAlertConditionInstance: InstanceHolder[ice_DeviceAlertCondition] = None
+        self.__deviceIdentityHandle: InstanceHandle = None
 
         self._domainParticipant: Final[DomainParticipant] = subscriber.participant
         self._subscriber: Final[Subscriber] = subscriber
@@ -307,8 +412,13 @@ class AbstractDevice(ABC):
             raise RuntimeError("_patientAlertWriter not created")
 
         self._technicalAlertWriter: ice_DataWriter[ice_Alert] = ice_DataWriter(self._domainParticipant, ice_TechnicalAlertTopic, ice_Alert)
+        if not self._technicalAlertWriter:
+            raise RuntimeError("_technicalAlertWriter not created")
+        
+        self._alarmLimitObjectiveCondition: ReadCondition = None
 
         self.__averagesByNumeric: dict[str, Averager] = {}
+        self.__instanceToAlarmLimit: dict[InstanceHandle, MetricAndType] = {}
 
         self.__registeredSampleArrayInstances: Final[list[InstanceHolder[ice_SampleArray]]] = []
         self.__registeredNumericInstances: Final[list[InstanceHolder[ice_Numeric]]] = []
@@ -323,7 +433,9 @@ class AbstractDevice(ABC):
 
         #TODO: IMPLIMENT SQL LOGGING - NOT DONE YET
 
-        #TODO: ADD averagingThread initialisation here
+        self.__averagingTime = DEFAULT_AVERAGING_TIME
+        self.__averagingThread = AveragingThread(self.__averagingTime, self.__averagesByNumeric, self._deviceIdentity, self.__log)
+        self.__averagingThread.start()
 
 
     def getSubscriber(self) -> Subscriber:
@@ -1079,8 +1191,52 @@ class AbstractDevice(ABC):
 
 
     def _writeDeviceIdentity(self) -> None:
+        """
+        Writes the current device's deviceIdentity to DDS
 
-        self._deviceAlertConditionInstance: InstanceHolder[ice_DeviceAlertCondition] = None
+        :raises RuntimeError: If the method is called without deviceIdentity.unique_device_identifier is populator
+        """
+
+        if not self._deviceIdentity.unique_device_identifier:
+            raise RuntimeError("Cannot write deviceIdentity without a UDI")
+        
+        if not self.__deviceIdentityHandle:
+            self.__deviceIdentityHandle = self._deviceIdentityWriter.register_instance(self._deviceIdentity)
+
+        self._deviceIdentityWriter.write(self._deviceIdentity, self.__deviceIdentityHandle)
+
+        alertCondition: ice_DeviceAlertCondition = ice_DeviceAlertCondition()
+        alertCondition.unique_device_identifier = self._deviceIdentity.unique_device_identifier
+        alertCondition.alert_state = ""
+        deviceAlertHandle: InstanceHandle = self._deviceAlertConditionDataWriter.register_instance(alertCondition)
+        deviceAlertConditionInstance: InstanceHolder[ice_DeviceAlertCondition] = ice_DeviceAlertCondition(alertCondition, deviceAlertHandle)
+
+        if not self._alarmLimitObjectiveCondition:
+            self.eventLoop.addHandler(ReadCondition(self._alarmLimitObjectiveReader,
+                                                    DataState(sample_state=SampleState.NOT_READ,
+                                                              view_state=ViewState.ANY,
+                                                              instance_state=InstanceState.ANY)), AlarmLimitHandler(self))
+
+
+    def iconOrBlank(self, model: str, icon_path: str) -> None:
+        DeviceIdentityBuilder(self._deviceIdentity).with_icon(icon_path).model(model).build()
+        self._writeDeviceIdentity()
+
+
+    def shutdown(self) -> None:
+        """
+        Shuts down the current device and cleans up any dds objects if required
+        """
+
+        if self._alarmLimitObjectiveCondition:
+            self.eventLoop.removeHandler(self._alarmLimitObjectiveCondition)
+            self._alarmLimitObjectiveCondition = None
+
+        # The Python API has no methods for deleting datawriters and topics etc, disposal is handled
+        # by the garbage collector and utilises context managers
+
+        self.__averagingThread.stop()
+        self.__log.info("AbstractDevice shutdown complete")
 
 
     # Abstract methods
