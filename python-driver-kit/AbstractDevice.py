@@ -1217,8 +1217,6 @@ class AbstractDevice(ABC):
                                                     DataState(sample_state=SampleState.NOT_READ,
                                                               view_state=ViewState.ANY,
                                                               instance_state=InstanceState.ANY)), AlarmLimitHandler(self))
-            
-        print("WRITTEN DI SUCCESSFULLY")
 
 
     def iconOrBlank(self, model: str, icon_path: str) -> None:
