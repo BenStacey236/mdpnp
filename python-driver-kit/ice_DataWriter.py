@@ -19,8 +19,17 @@ class ice_DataWriter(Generic[T]):
         :param data_type: An ice datatype class that the writer instance will be handling
         """
 
-        self.topic = dds.Topic(participant, topic_name, data_type)
-        self.writer = dds.DataWriter(participant.implicit_publisher, self.topic)
+        qos_provider = dds.QosProvider("python-driver-kit/USER_QOS_PROFILES.xml")
+        writer_qos = qos_provider.datawriter_qos_from_profile("ice_Library::ice_Profile")
+        writer_qos.durability = writer_qos.durability.transient_local # CURRENLTY RELIANT ON THIS WHICH WE SHOULDNT BE
+        writer_qos.liveliness.lease_duration = dds.Duration(5, 0)
+        topic_qos = qos_provider.topic_qos_from_profile("ice_Library::ice_Profile")
+
+        pub_qos = qos_provider.publisher_qos_from_profile("ice_Library::ice_Profile")
+        publisher = dds.Publisher(participant, pub_qos)
+
+        self.topic = dds.Topic(participant, topic_name, data_type, qos=topic_qos)
+        self.writer = dds.DataWriter(publisher, self.topic, qos=writer_qos)
 
 
     def register_instance(self, data: T) -> dds.InstanceHandle:

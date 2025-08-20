@@ -131,7 +131,7 @@ class AveragingThread(threading.Thread):
         self.__averages_by_numeric: dict[str, Averager] = averages_by_numeric
         self.__device_identity: ice_DeviceIdentity = device_identity
         self.__log: logging.Logger = logger
-        self.__stop_event = threading.Event().set()
+        self.__stop_event: threading.Event = threading.Event()
 
 
     @overrides
@@ -141,6 +141,7 @@ class AveragingThread(threading.Thread):
         """
 
         while not self.__stop_event.is_set():
+            print("LOCKING")
             try:
                 time.sleep(self.__interval / 1000.0)
 
@@ -163,7 +164,7 @@ class AveragingThread(threading.Thread):
         Signal the thread to stop
         """
 
-        self.__stop_event.clear()
+        self.__stop_event.set()
 
 
 class NullSaveContainer(ABC, Generic[T]):
@@ -1212,13 +1213,23 @@ class AbstractDevice(ABC):
         deviceAlertConditionInstance: InstanceHolder[ice_DeviceAlertCondition] = ice_DeviceAlertCondition(alertCondition, deviceAlertHandle)
 
         if not self._alarmLimitObjectiveCondition:
-            self.eventLoop.addHandler(ReadCondition(self._alarmLimitObjectiveReader,
+            self.eventLoop.addHandler(ReadCondition(self._alarmLimitObjectiveReader.reader,
                                                     DataState(sample_state=SampleState.NOT_READ,
                                                               view_state=ViewState.ANY,
                                                               instance_state=InstanceState.ANY)), AlarmLimitHandler(self))
+            
+        print("WRITTEN DI SUCCESSFULLY")
 
 
     def iconOrBlank(self, model: str, icon_path: str) -> None:
+        """
+        Writes the device identity with the provided path to the icon.
+        Calls _writeDeviceIdentity
+        
+        :param model: The device's model
+        :param icon_path: The path to the model's icon
+        """
+
         DeviceIdentityBuilder(self._deviceIdentity).with_icon(icon_path).model(model).build()
         self._writeDeviceIdentity()
 
@@ -1241,7 +1252,7 @@ class AbstractDevice(ABC):
 
     # Abstract methods
 
-    @abstractmethod
+    #@abstractmethod
     def init(self) -> None:
         """
         Post-construction initialization method to allow implementations to
@@ -1255,7 +1266,7 @@ class AbstractDevice(ABC):
         pass
 
     
-    @abstractmethod
+    #@abstractmethod
     def setAlarmLimit(self, objective: ice_GlobalAlarmLimitObjective) -> None:
         """
         Sets the alarm limit to the supplied `GlobalAlarmLimitObjective` instance
@@ -1266,7 +1277,7 @@ class AbstractDevice(ABC):
         pass
     
 
-    @abstractmethod
+    #@abstractmethod
     def unsetAlarmLimit(self, metric_id: str, limit_type: ice_LimitType) -> None:
         """
         Unsets the alarm limit for a certain metric and limit type

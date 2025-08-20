@@ -122,11 +122,14 @@ class DeviceIdentityBuilder:
         :returns device_identity_builder: The current `DeviceIdentityBuilder` instance, to allow for chaining 
         """
 
-        path = Path(icon_path)
+        if icon_path:
+            path = Path(icon_path)
+        else:
+            path = Path()
 
         if not path.exists() or not path.is_file():
             self.__log.warning("Icon file does not exist: %s", icon_path)
-            self.__pojo.icon = b""
+            self.__pojo.icon.image.value = b""
             return self
 
         try:
