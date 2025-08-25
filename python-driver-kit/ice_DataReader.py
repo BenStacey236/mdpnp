@@ -19,12 +19,29 @@ class ice_DataReader(Generic[T]):
         :param data_type: An ice datatype class that the reader instance will be handling
         """
 
-        self.topic = dds.Topic(participant, topic_name, data_type)
-        self.reader = dds.DataReader(participant.implicit_subscriber, self.topic)
+        qos_provider = dds.QosProvider("python-driver-kit/USER_QOS_PROFILES.xml")
+        reader_qos = qos_provider.datareader_qos_from_profile("ice_Library::ice_Profile")
+        topic_qos = qos_provider.topic_qos_from_profile("ice_Library::ice_Profile")
+
+        sub_qos = qos_provider.subscriber_qos_from_profile("ice_Library::ice_Profile")
+        subscriber = dds.Subscriber(participant, sub_qos)
+
+        self.topic = dds.Topic(participant, topic_name, data_type, qos=topic_qos)
+        self.reader = dds.DataReader(subscriber, self.topic, qos=reader_qos)
 
 
     def read(self):
         return self.reader.read()
+    
+
+    def read_w_condition(self, condition: dds.ReadCondition):
+        """
+        Reads data from DDS with a provided `ReadCondition`
+        
+        :param condition: The `ReadCondition` providing the conditions of the read
+        """
+        
+        return self.reader.select().state(condition.state_filter).read()
 
 
     def get_key_value(self, handle: dds.InstanceHandle) -> T:

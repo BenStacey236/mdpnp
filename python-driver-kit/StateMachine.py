@@ -12,7 +12,7 @@ class StateMachine(Generic[T]):
     Handles the `ConnectionState` of an OpenICE device
     """
 
-    __log: logging.Logger = logging.getLogger("StateMachine")
+    _log: logging.Logger = logging.getLogger("StateMachine")
 
 
     def __init__(self, legalTransitions: list[list[T]], initialState: T, transitionNote: str) -> None:

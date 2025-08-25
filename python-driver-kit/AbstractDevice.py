@@ -141,7 +141,6 @@ class AveragingThread(threading.Thread):
         """
 
         while not self.__stop_event.is_set():
-            print("LOCKING")
             try:
                 time.sleep(self.__interval / 1000.0)
 

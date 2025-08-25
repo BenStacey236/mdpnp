@@ -227,7 +227,7 @@ class EventLoop:
         :param properties: An optional parameter that if provided, will initialise the internal `WaitSet` using the `WaitSetProperties` instance
         """
 
-        self.__currentServiceThread: threading.Thread = None
+        self.__currentServiceThread: threading.Thread = threading.current_thread()
         self.__lock: threading.Condition = threading.Condition()
         self.__conditionHandlers: Final[dict[int, ConditionHandler]] = {} # Need to map id to ConditionHandler as Condition is not hashable
         self.__queuedMutations: Final[list[Mutation]] = []
@@ -298,7 +298,7 @@ class EventLoop:
 
                 now = time.time() * 1000
 
-            self.__currentServiceThread
+            self.__currentServiceThread = threading.current_thread()
 
         if not dur.zero and now >= giveup:
             raise TimeoutError("Timed out waiting to become service thread")
@@ -344,11 +344,9 @@ class EventLoop:
         :param condition: The condition to add to the `EventLoop`
         :param conditionHandler: The `ConditionHandler` instance to handle the added `Condition`
         """
-        print("RAN ADD HANDLER")
         m = Mutation(True, condition, conditionHandler)
 
         if self.is_current_service_thread():
-            print("NEED TO HANDLE")
             self._handleMutation(m)
 
         else:
@@ -356,7 +354,6 @@ class EventLoop:
                 self.__queuedMutations.append(m)
                 self.__mutate.trigger_value = True
 
-            print("ABOUT TO AWAIT")
             m.await_mutation()
 
 

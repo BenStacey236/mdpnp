@@ -45,10 +45,10 @@ class ConnectionStateMachine(StateMachine[ice_ConnectionState]):
         """
         
         self.__device.stateChanging(newState, oldState, transitionNote)
-        self.__log.debug(f"{oldState}==>{newState} ({transitionNote})")
+        self._log.debug(f"{oldState}==>{newState} ({transitionNote})")
         self.__device._deviceConnectivity.state = newState
         self.__device._deviceConnectivity.info = transitionNote
-        handle: InstanceHandle = self.__device.__deviceConnectivityHandle
+        handle: InstanceHandle = self.__device._deviceConnectivityHandle
 
         if handle is not None:
             self.__device._writeDeviceConnectivity()
@@ -99,7 +99,7 @@ class AbstractConnectedDevice(AbstractDevice, ABC):
         
         self._stateMachine: ConnectionStateMachine = ConnectionStateMachine(self.__legalTransitions, ice_ConnectionState.Initial, "initial state", self)
         self._deviceConnectivity = ice_DeviceConnectivity()
-        self.__deviceConnectivityHandle: InstanceHandle = None
+        self._deviceConnectivityHandle: InstanceHandle = None
         self._deviceConnectivity.type = self.getConnectionType()
         self._deviceConnectivity.state = self.getState()
 
@@ -123,20 +123,20 @@ class AbstractConnectedDevice(AbstractDevice, ABC):
 
     @overrides
     def shutdown(self) -> None:
-        if self.__deviceConnectivityHandle is not None:
-            handle = self.__deviceConnectivityHandle
-            self.__deviceConnectivityHandle = None
+        if self._deviceConnectivityHandle is not None:
+            handle = self._deviceConnectivityHandle
+            self._deviceConnectivityHandle = None
             self.__deviceConnectivityWriter.dispose(handle)
         
         super().shutdown()
 
 
     @abstractmethod
-    def connect(string: str) -> bool:
+    def connect(device_name: str) -> bool:
         """
         Connects the device
         
-        :param string: The connection message
+        :param device_name: The name of the device attempting to connect to
         """
 
         pass
@@ -204,7 +204,7 @@ class AbstractConnectedDevice(AbstractDevice, ABC):
     def _writeDeviceIdentity(self) -> None:
         super()._writeDeviceIdentity()
 
-        if self.__deviceConnectivityHandle is None:
+        if self._deviceConnectivityHandle is None:
             self._writeDeviceConnectivity()
 
 
@@ -219,7 +219,7 @@ class AbstractConnectedDevice(AbstractDevice, ABC):
         if not self._deviceConnectivity.unique_device_identifier:
             raise RuntimeError("No UDI when calling _writeDeviceConnectivity")
 
-        if self.__deviceConnectivityHandle is None:
-            self.__deviceConnectivityHandle = self.__deviceConnectivityWriter.register_instance(self._deviceConnectivity)
+        if self._deviceConnectivityHandle is None:
+            self._deviceConnectivityHandle = self.__deviceConnectivityWriter.register_instance(self._deviceConnectivity)
 
-        self.__deviceConnectivityWriter.write(self._deviceConnectivity, self.__deviceConnectivityHandle)
+        self.__deviceConnectivityWriter.write(self._deviceConnectivity, self._deviceConnectivityHandle)
