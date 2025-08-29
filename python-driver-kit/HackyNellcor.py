@@ -101,5 +101,8 @@ if __name__ == "__main__":
             b'\x30\x0D\x0A'
         ]
         
-        listen_on_port(port_name, nellcor, baudrate=9600, startup_commands=startup_commands)
-
+        try:    
+            listen_on_port(port_name, nellcor, baudrate=9600, startup_commands=startup_commands)
+        except KeyboardInterrupt:
+            nellcor.disconnect()
+            nellcor.shutdown()
