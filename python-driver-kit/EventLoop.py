@@ -83,6 +83,7 @@ class CallableHandler(ConditionHandler):
             condition.trigger_value = False
 
         for c in callables:
+            print(f"Calling: {c.__name__}")
             c()
 
 

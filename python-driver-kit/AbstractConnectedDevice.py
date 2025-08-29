@@ -132,7 +132,7 @@ class AbstractConnectedDevice(AbstractDevice, ABC):
 
 
     @abstractmethod
-    def connect(device_name: str) -> bool:
+    def connect(self, device_name: str) -> bool:
         """
         Connects the device
         

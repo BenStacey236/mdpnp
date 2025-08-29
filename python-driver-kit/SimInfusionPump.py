@@ -2,15 +2,19 @@ from ice import ice_InfusionStatus
 from ice import ice_InfusionStatusTopic
 from ice import ice_InfusionObjective
 from ice import ice_InfusionObjectiveTopic
+from ice import ice_Numeric
+import units
+import rosetta
 
 from AbstractSimulatedConnectedDevice import AbstractSimulatedConnectedDevice
 from SimulatedInfusionPump import SimulatedInfusionPump
 from ice_DataWriter import ice_DataWriter
 from ice_DataReader import ice_DataReader
 from EventLoop import EventLoop, ConditionHandler
+from AbstractDevice import InstanceHolder
+import DeviceClock
 
 from rti.connextdds import InstanceHandle
-from rti.connextdds import StringSeq
 from rti.connextdds import Query
 from rti.connextdds import QueryCondition
 from rti.connextdds import DataState
@@ -20,6 +24,13 @@ from rti.connextdds import InstanceState
 import rti.connextdds as dds
 
 from overrides import overrides
+import random
+import time
+
+import rti.connextdds as dds
+
+logger = dds.Logger.instance
+logger.verbosity_by_category(dds.LogCategory.all_categories, dds.Verbosity.WARNING)
 
 
 class Pump(SimulatedInfusionPump):
@@ -36,6 +47,15 @@ class Pump(SimulatedInfusionPump):
 
         super().__init__()
         self.__device = device
+        self._pulse: InstanceHolder[ice_Numeric] = None
+        self._spo2: InstanceHolder[ice_Numeric] = None
+        self._bpm = 0
+        self._oxygen = 0
+
+
+    def set_bmp_o2(self, bpm: int, o2: int):
+        self._bpm = bpm
+        self._oxygen = o2
 
 
     @overrides
@@ -49,6 +69,10 @@ class Pump(SimulatedInfusionPump):
         self.__device._infusionStatus.infusion_duration_seconds = infusion_duration_seconds
         self.__device._infusionStatus.infusion_fraction_complete = infusion_fraction_complete
         self.__device._infusionStatusWriter.write(self.__device._infusionStatus, self.__device._infusionStatusHandle)
+
+        sampleTime = DeviceClock.ReadingImpl(time_value=int(time.time()*1000))
+        self._pulse = self.__device._numericSample(self._pulse, self._bpm, sampleTime, rosetta.rosetta_MDC_PULS_OXIM_PULS_RATE, "BEN_VENDOR", units.rosetta_MDC_DIM_BEAT_PER_MIN)
+        self._spo2 = self.__device._numericSample(self._spo2, self._oxygen, sampleTime, rosetta.rosetta_MDC_PULS_OXIM_SAT_O2, "BEN_VENDOR", units.rosetta_MDC_DIM_PERCENT)
 
 
 class PumpConditionHandler(ConditionHandler):
@@ -118,6 +142,10 @@ class SimInfusionPump(AbstractSimulatedConnectedDevice):
         self.eventLoop.addHandler(self.__infusionObjectiveQueryCondition, PumpConditionHandler(self))
 
 
+    def set_bmp_o2(self, bpm: int, o2: int):
+        self.__pump.set_bmp_o2(bpm, o2)
+
+
     @overrides
     def connect(self, device_name) -> bool:
         self.__pump.connect()
@@ -167,18 +195,31 @@ class SimInfusionPump(AbstractSimulatedConnectedDevice):
         return "interop-lab/demo-devices/src/main/resources/org/mdpnp/devices/simulation/pump/pump.png"
 
 
+
 if __name__ == "__main__":
 
-    qos_provider = dds.QosProvider("python-driver-kit/USER_QOS_PROFILES.xml")
-    particpant_qos = qos_provider.participant_qos_from_profile("ice_Library::ice_Profile")
-    particpant_qos.resource_limits.type_code_max_serialized_length = 512 # AGAIN TEMP QOS FIX
-    sub_qos = qos_provider.subscriber_qos_from_profile("ice_Library::ice_Profile")
-    pub_qos = qos_provider.publisher_qos_from_profile("ice_Library::ice_Profile")
+    qos_provider = dds.QosProvider("data-types/x73-idl-rti-dds/src/main/resources/META-INF/ice_library.xml")
+    particpant_qos = qos_provider.participant_qos_from_profile("ice_library::default_profile")
+    #particpant_qos.resource_limits.type_code_max_serialized_length = 512 # AGAIN TEMP QOS FIX
+    sub_qos = qos_provider.subscriber_qos_from_profile("ice_library::default_profile")
+    pub_qos = qos_provider.publisher_qos_from_profile("ice_library::default_profile")
 
     participant = dds.DomainParticipant(0, particpant_qos)
     subscriber = dds.Subscriber(participant, sub_qos)
     publisher = dds.Publisher(participant, pub_qos)
     eventLoop = EventLoop()
 
+
     pump = SimInfusionPump(subscriber, publisher, eventLoop)
     pump.connect("Infusion Pump (Simulated)")
+    try:
+        while True:
+            pass
+
+    except KeyboardInterrupt:
+        print("START OF INTERRUPT HANDLER")
+        pump.disconnect()
+        pump.shutdown()
+        pump._unregisterAllInstances()
+        time.sleep(2)
+        print("END OF INTERRUPT HANDLER")

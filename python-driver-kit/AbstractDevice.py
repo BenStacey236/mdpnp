@@ -435,7 +435,7 @@ class AbstractDevice(ABC):
 
         self.__averagingTime = DEFAULT_AVERAGING_TIME
         self.__averagingThread = AveragingThread(self.__averagingTime, self.__averagesByNumeric, self._deviceIdentity, self.__log)
-        self.__averagingThread.start()
+        #self.__averagingThread.start()
 
 
     def getSubscriber(self) -> Subscriber:
@@ -622,12 +622,14 @@ class AbstractDevice(ABC):
         Unregisters all `Numeric`, `SampleArray`, `AlarmLimit`, `AlarmLimitObjective`, Patient `Alert`, and Technical `Alert` instances from DDS
         """
 
-        self._unregisterAllNumericInstances()
+        print("UNREGISTER: IVE BEEN CALLED")
+        #self._unregisterAllNumericInstances()
         self._unregisterAllSampleArrayInstances()
         self._unregisterAllAlarmLimitInstances()
         self._unregisterAllAlarmLimitObjectiveInstances()
         self._unregisterAllPatientAlertInstances()
         self._unregisterAllTechnicalAlertInstances()
+        self._deviceIdentityWriter.unregister_instance(self.__deviceIdentityHandle)
 
 
     def __unregisterAllAlertInstances(self, old: set[str], map: dict[str, InstanceHolder[ice_Alert]], writer: ice_DataWriter[ice_Alert]) -> None:
@@ -1242,7 +1244,7 @@ class AbstractDevice(ABC):
 
         # The Python API has no methods for deleting datawriters and topics etc, disposal is handled
         # by the garbage collector and utilises context managers
-
+        
         self.__averagingThread.stop()
         self.__log.info("AbstractDevice shutdown complete")
 

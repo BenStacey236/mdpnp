@@ -1,5 +1,6 @@
 import rti.connextdds as dds
 from typing import Generic, TypeVar
+from ice import ice_DeviceIdentity
 
 
 T = TypeVar('T')
@@ -19,15 +20,24 @@ class ice_DataWriter(Generic[T]):
         :param data_type: An ice datatype class that the writer instance will be handling
         """
 
-        qos_provider = dds.QosProvider("python-driver-kit/USER_QOS_PROFILES.xml")
-        writer_qos = qos_provider.datawriter_qos_from_profile("ice_Library::ice_Profile")
-        writer_qos.durability = writer_qos.durability.transient_local # CURRENLTY RELIANT ON THIS WHICH WE SHOULDNT BE
-        writer_qos.liveliness.lease_duration = dds.Duration(5, 0)
-        topic_qos = qos_provider.topic_qos_from_profile("ice_Library::ice_Profile")
+        qos_provider = dds.QosProvider("data-types/x73-idl-rti-dds/src/main/resources/META-INF/ice_library.xml")
+        
+        if data_type != ice_DeviceIdentity:
+            print(f"\033[92mDEFAULT PROFILE for type: {data_type}\033[0m")
+            writer_qos = qos_provider.datawriter_qos_from_profile("ice_library::default_profile")
+            #writer_qos.durability = writer_qos.durability.transient_local # CURRENLTY RELIANT ON THIS WHICH WE SHOULDNT BE
+            #writer_qos.durability = writer_qos.durability.transient_local
+            #writer_qos.liveliness.lease_duration = dds.Duration(5, 0)
+            topic_qos = qos_provider.topic_qos_from_profile("ice_library::default_profile")
 
-        pub_qos = qos_provider.publisher_qos_from_profile("ice_Library::ice_Profile")
+            pub_qos = qos_provider.publisher_qos_from_profile("ice_library::default_profile")
+        else:
+            print(f"\033[92mLOADING DEVICE IDENTITY PROFILE for type: {data_type}\033[0m")
+            writer_qos = qos_provider.datawriter_qos_from_profile("ice_library::device_identity")
+            topic_qos = qos_provider.topic_qos_from_profile("ice_library::device_identity")
+            pub_qos = qos_provider.publisher_qos_from_profile("ice_library::device_identity")
+        
         publisher = dds.Publisher(participant, pub_qos)
-
         self.topic = dds.Topic(participant, topic_name, data_type, qos=topic_qos)
         self.writer = dds.DataWriter(publisher, self.topic, qos=writer_qos)
 

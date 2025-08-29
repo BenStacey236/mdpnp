@@ -135,7 +135,7 @@ class AbstractSimulatedConnectedDevice(AbstractConnectedDevice, ABC, GlobalSimul
         if alarm_limit:
             return f"{alarm_limit.metric_id}-{alarm_limit.limit_type}"
         
-        elif metric_id and limit_type:
+        elif metric_id and limit_type is not None:
             return f"{metric_id}-{limit_type}"
         
         else:
@@ -155,24 +155,25 @@ class AbstractSimulatedConnectedDevice(AbstractConnectedDevice, ABC, GlobalSimul
     def _numericSample(self, holder, new_value, time, metric_id = None, vendor_metric_id = None, unit_id = units.rosetta_MDC_DIM_DIMLESS, instance_id = 0):
         super()._numericSample(holder, new_value, time, metric_id, vendor_metric_id, unit_id, instance_id)
 
-        identifier = f"{holder.data.metric_id}-{holder.data.instance_id}"
-        lowAlarmLimit: InstanceHolder[ice_AlarmLimit] = self.__alarmLimit.get(self.__alarmLimitKey(metric_id=holder.data.metric_id, limit_type=ice_LimitType.low_limit))
-        highAlarmLimit: InstanceHolder[ice_AlarmLimit] = self.__alarmLimit.get(self.__alarmLimitKey(metric_id=holder.data.metric_id, limit_type=ice_LimitType.high_limit))
+        if holder:
+            identifier = f"{holder.data.metric_id}-{holder.data.instance_id}"
+            lowAlarmLimit: InstanceHolder[ice_AlarmLimit] = self.__alarmLimit.get(self.__alarmLimitKey(metric_id=holder.data.metric_id, limit_type=ice_LimitType.low_limit))
+            highAlarmLimit: InstanceHolder[ice_AlarmLimit] = self.__alarmLimit.get(self.__alarmLimitKey(metric_id=holder.data.metric_id, limit_type=ice_LimitType.high_limit))
 
-        if lowAlarmLimit is None and highAlarmLimit is None:
-            return
-        
-        if lowAlarmLimit is not None and lowAlarmLimit.data.value > new_value:
-            self.__log.debug(f"For {identifier} lower limit is exceeded {new_value} < {lowAlarmLimit.data.value}")
-            self._writePatientAlert(identifier, "LOW")
+            if lowAlarmLimit is None and highAlarmLimit is None:
+                return
+            
+            if lowAlarmLimit is not None and lowAlarmLimit.data.value > new_value:
+                self.__log.debug(f"For {identifier} lower limit is exceeded {new_value} < {lowAlarmLimit.data.value}")
+                self._writePatientAlert(identifier, "LOW")
 
-        elif highAlarmLimit is not None and highAlarmLimit.data.value < new_value:
-            self.__log.debug(f"For {identifier} upper limit is exceeded {new_value} > {highAlarmLimit.data.value}")
-            self._writePatientAlert(identifier, "HIGH")
+            elif highAlarmLimit is not None and highAlarmLimit.data.value < new_value:
+                self.__log.debug(f"For {identifier} upper limit is exceeded {new_value} > {highAlarmLimit.data.value}")
+                self._writePatientAlert(identifier, "HIGH")
 
-        else:
-            self.__log.debug(f"For {identifier} is in range {new_value} in [{'?' if not lowAlarmLimit else lowAlarmLimit.data.value}-{'?' if not highAlarmLimit else highAlarmLimit.data.value}]")
-            self._writePatientAlert(identifier, "NORMAL")
+            else:
+                self.__log.debug(f"For {identifier} is in range {new_value} in [{'?' if not lowAlarmLimit else lowAlarmLimit.data.value}-{'?' if not highAlarmLimit else highAlarmLimit.data.value}]")
+                self._writePatientAlert(identifier, "NORMAL")
 
     
     @overrides

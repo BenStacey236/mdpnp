@@ -27,7 +27,7 @@ class StateMachine(Generic[T]):
         self.__state: T = initialState
         self.__legalTransitions: Final[list[list[T]]] = legalTransitions
         self.__transitionNote: str = transitionNote
-        self.__lock: threading.Condition = threading.Condition()
+        self._lock: threading.Condition = threading.Condition()
 
 
     def wait(self, state: T, timeout: int) -> bool:
@@ -39,7 +39,7 @@ class StateMachine(Generic[T]):
         :returns reached: True if the state was reached within the timeout period, or False if not
         """
         
-        with self.__lock:
+        with self._lock:
             giveup: int = (time.time() * 1000) + timeout
 
             if timeout < 10:
@@ -51,7 +51,7 @@ class StateMachine(Generic[T]):
 
             while not state == self.__state and (time.time() * 1000) < giveup:
                 try:
-                    self.__lock.wait(0.01)
+                    self._lock.wait(0.01)
                 except Exception as e:
                     self.__log.error(f"Interrupted waiting for {state}", exc_info=e)
 
@@ -66,7 +66,7 @@ class StateMachine(Generic[T]):
         :returns is_legal: True if it is legal to transition to the provided state, or False if not
         """
 
-        with self.__lock:
+        with self._lock:
             for i, _ in enumerate(self.__legalTransitions):
                 if self.__state == self.__legalTransitions[i][0] and state == self.__legalTransitions[i][1]:
                     return True
@@ -85,7 +85,7 @@ class StateMachine(Generic[T]):
         :returns state: The current state
         """
 
-        with self.__lock:
+        with self._lock:
             return self.__state
 
 
@@ -96,7 +96,7 @@ class StateMachine(Generic[T]):
         :returns note: The transition note of the current instance
         """
 
-        with self.__lock:
+        with self._lock:
             return self.__transitionNote
     
 
@@ -109,12 +109,12 @@ class StateMachine(Generic[T]):
         :returns legal: True if the state transition was legal and therefore successful, or False otherwise
         """
 
-        with self.__lock:
+        with self._lock:
             if self.legalTransition(state):
                 oldState = self.__state
                 self.__state = state
                 self.__transitionNote = transitionNote
-                self.__lock.notify_all()
+                self._lock.notify_all()
                 self.emit(state, oldState, transitionNote)
                 return True
             
@@ -136,7 +136,7 @@ class StateMachine(Generic[T]):
         :raises RuntimeError: If the timeout is reached and state cannot be transitioned, or if another exceptions occur in the process of executing
         """
 
-        with self.__lock:
+        with self._lock:
             if timeout is None:
                 timeout = self._getTransitionTimeout()
 
@@ -144,7 +144,7 @@ class StateMachine(Generic[T]):
 
             while not self.legalTransition(state) and (time.time() * 1000) < giveup:
                 try:
-                    self.__lock.wait(giveup - (time.time() * 1000))
+                    self._lock.wait(giveup - (time.time() * 1000))
 
                 except Exception as e:
                     raise RuntimeError(e)

@@ -104,7 +104,6 @@ class SimulatedInfusionPump:
 
         self.disconnect()
         self._stop_event.clear()
-        print("STARTING THREAD")
         self._thread = threading.Thread(target=self.__infuse, daemon=True)
         self._thread.start()
 
