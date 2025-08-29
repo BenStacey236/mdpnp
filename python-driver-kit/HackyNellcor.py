@@ -76,11 +76,11 @@ def listen_on_port(port_name: str, device: SimInfusionPump, baudrate=9600, start
         print("\nStopped listening.")
 
 if __name__ == "__main__":
-    qos_provider = dds.QosProvider("python-driver-kit/USER_QOS_PROFILES.xml")
-    particpant_qos = qos_provider.participant_qos_from_profile("ice_Library::ice_Profile")
-    particpant_qos.resource_limits.type_code_max_serialized_length = 512 # AGAIN TEMP QOS FIX
-    sub_qos = qos_provider.subscriber_qos_from_profile("ice_Library::ice_Profile")
-    pub_qos = qos_provider.publisher_qos_from_profile("ice_Library::ice_Profile")
+    qos_provider = dds.QosProvider("data-types/x73-idl-rti-dds/src/main/resources/META-INF/ice_library.xml")
+    particpant_qos = qos_provider.participant_qos_from_profile("ice_library::default_profile")
+    #particpant_qos.resource_limits.type_code_max_serialized_length = 512 # AGAIN TEMP QOS FIX
+    sub_qos = qos_provider.subscriber_qos_from_profile("ice_library::default_profile")
+    pub_qos = qos_provider.publisher_qos_from_profile("ice_library::default_profile")
 
     participant = dds.DomainParticipant(0, particpant_qos)
     subscriber = dds.Subscriber(participant, sub_qos)
