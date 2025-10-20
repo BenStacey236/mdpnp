@@ -23,16 +23,11 @@ class ice_DataWriter(Generic[T]):
         qos_provider = dds.QosProvider("data-types/x73-idl-rti-dds/src/main/resources/META-INF/ice_library.xml")
         
         if data_type != ice_DeviceIdentity:
-            print(f"\033[92mDEFAULT PROFILE for type: {data_type}\033[0m")
             writer_qos = qos_provider.datawriter_qos_from_profile("ice_library::default_profile")
-            #writer_qos.durability = writer_qos.durability.transient_local # CURRENLTY RELIANT ON THIS WHICH WE SHOULDNT BE
-            #writer_qos.durability = writer_qos.durability.transient_local
-            #writer_qos.liveliness.lease_duration = dds.Duration(5, 0)
             topic_qos = qos_provider.topic_qos_from_profile("ice_library::default_profile")
 
             pub_qos = qos_provider.publisher_qos_from_profile("ice_library::default_profile")
         else:
-            print(f"\033[92mLOADING DEVICE IDENTITY PROFILE for type: {data_type}\033[0m")
             writer_qos = qos_provider.datawriter_qos_from_profile("ice_library::device_identity")
             topic_qos = qos_provider.topic_qos_from_profile("ice_library::device_identity")
             pub_qos = qos_provider.publisher_qos_from_profile("ice_library::device_identity")

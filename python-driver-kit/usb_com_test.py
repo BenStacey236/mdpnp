@@ -52,7 +52,7 @@ def filter_data(data: bytes) -> str | None:
 def listen_on_port(port_name: str, device: SimInfusionPump, baudrate=9600, startup_commands=None):
     try:
         # Replace 'cu' with 'tty' for actual listening port
-        port_name = port_name
+        port_name = port_name.replace("cu", "tty")
         with serial.Serial(port_name, baudrate, timeout=1) as ser:
             # Send startup commands if provided
             if startup_commands:
@@ -72,13 +72,15 @@ def listen_on_port(port_name: str, device: SimInfusionPump, baudrate=9600, start
                   
     except serial.SerialException as e:
         print(f"Error opening port {port_name}: {e}")
-
+    except KeyboardInterrupt:
+        print("\nStopped listening.")
 
 if __name__ == "__main__":
-    qos_provider = dds.QosProvider("data-types/x73-idl-rti-dds/src/main/resources/META-INF/ice_library.xml")
-    particpant_qos = qos_provider.participant_qos_from_profile("ice_library::default_profile")
-    sub_qos = qos_provider.subscriber_qos_from_profile("ice_library::default_profile")
-    pub_qos = qos_provider.publisher_qos_from_profile("ice_library::default_profile")
+    qos_provider = dds.QosProvider("python-driver-kit/USER_QOS_PROFILES.xml")
+    particpant_qos = qos_provider.participant_qos_from_profile("ice_Library::ice_Profile")
+    particpant_qos.resource_limits.type_code_max_serialized_length = 512 # AGAIN TEMP QOS FIX
+    sub_qos = qos_provider.subscriber_qos_from_profile("ice_Library::ice_Profile")
+    pub_qos = qos_provider.publisher_qos_from_profile("ice_Library::ice_Profile")
 
     participant = dds.DomainParticipant(0, particpant_qos)
     subscriber = dds.Subscriber(participant, sub_qos)
@@ -91,7 +93,7 @@ if __name__ == "__main__":
 
     ports = list_usb_ports()
     if ports:
-        port_name = select_port(ports)
+        port_name = select_port(ports).replace("cu", "tty")
         
         startup_commands = [
             b'\x03\x03',
@@ -99,8 +101,5 @@ if __name__ == "__main__":
             b'\x30\x0D\x0A'
         ]
         
-        try:    
-            listen_on_port(port_name, nellcor, baudrate=9600, startup_commands=startup_commands)
-        except KeyboardInterrupt:
-            nellcor.disconnect()
-            nellcor.shutdown()
+        listen_on_port(port_name, nellcor, baudrate=9600, startup_commands=startup_commands)
+

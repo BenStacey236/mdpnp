@@ -200,7 +200,6 @@ if __name__ == "__main__":
 
     qos_provider = dds.QosProvider("data-types/x73-idl-rti-dds/src/main/resources/META-INF/ice_library.xml")
     particpant_qos = qos_provider.participant_qos_from_profile("ice_library::default_profile")
-    #particpant_qos.resource_limits.type_code_max_serialized_length = 512 # AGAIN TEMP QOS FIX
     sub_qos = qos_provider.subscriber_qos_from_profile("ice_library::default_profile")
     pub_qos = qos_provider.publisher_qos_from_profile("ice_library::default_profile")
 
